@@ -1,0 +1,51 @@
+apply plugin: 'com.android.application'
+
+android {
+    compileSdkVersion 28
+
+    defaultConfig {
+        applicationId "com.ys.yoosir.camerapreview"
+        minSdkVersion 23
+        targetSdkVersion 28
+        versionCode 1
+        versionName "1.0"
+    }
+
+    dexOptions {
+        jumboMode true
+    }
+    packagingOptions{
+        pickFirst  '**'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['libs']
+        }
+    }
+}
+
+repositories {
+    flatDir {
+        dirs 'libs'   // aar目录
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+    testImplementation 'junit:junit:4.12'
+    implementation 'com.android.support:appcompat-v7:28.0.0'
+
+    //包含aar
+    implementation (name: 'core-release', ext: 'aar')
+    implementation(name: 'libFaceAttribute-release', ext: 'aar')
+    implementation(name: 'libFaceDetector-release', ext: 'aar')
+    implementation(name: 'libFaceTrackerDetector-release', ext: 'aar')
+}
