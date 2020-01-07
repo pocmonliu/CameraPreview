@@ -29,6 +29,7 @@ import android.view.Display;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.Window;
 import android.view.WindowManager;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
@@ -103,8 +104,15 @@ public class MainActivity extends Activity/* extends AppCompatActivity */{
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 无title
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        // 全屏
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                WindowManager.LayoutParams.FLAG_FULLSCREEN);
+
         setContentView(R.layout.activity_main);
-        mSurfaceView = (SurfaceView) findViewById(R.id.surface_view);
+
+        mSurfaceView = findViewById(R.id.surface_view);
         tv_info = findViewById(R.id.tv_info);
 
         ToastUtil.context = MainActivity.this;
@@ -264,6 +272,7 @@ public class MainActivity extends Activity/* extends AppCompatActivity */{
 
                         String infos = "";
                         if(paramFaceInfos != null && paramFaceInfos.size() > 0) {
+
                             if(attributeInfos != null && attributeInfos.length > 0) {
                                 for (ImoAttributeInfo info: attributeInfos) {
                                     infos += "age: " + info.getAge() + ", gender: " + info.getGender().getImoGender() + "\n";
