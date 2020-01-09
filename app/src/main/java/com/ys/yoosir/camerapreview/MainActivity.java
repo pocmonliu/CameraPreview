@@ -52,27 +52,21 @@ public class MainActivity extends FragmentActivity {
     private static final int CAMERA_PREVIEW_WIDTH = 1280;
     private static final int CAMERA_PREVIEW_HEIGHT = 720;
     private static final int CAMERA_DISPLAY_ORIENTATION = 90;
+    private Camera mCamera;
+    private boolean isPreview = false;
+    private HandlerThread mCameraHandlerThread;
+    private Handler mCameraHandler;
 
     private TextView tv_face_attr;
     private  SurfaceView surface_view;
-    private Camera mCamera;
-    private boolean isPreview = false;
-
-    private HandlerThread mCameraHandlerThread;
-    private Handler mCameraHandler;
-    private HandlerThread mImoHandlerThread;
-    private Handler mImoHandler;
-    
 
     private MainHandler mMainHandler;
-    private ImoFaceTrackerDetector mImoFaceTrackerDetector;
-    private ImoFaceAttribute mImoFaceAttribute;
-    private boolean mDetectionRunning = false;
+
+    private ImoModel mImoModel;
 
     public void updateFaceAttr(String text) {
         tv_face_attr.setText(text);
     }
-
 
     private static class MainHandler extends Handler {
 
@@ -112,14 +106,9 @@ public class MainActivity extends FragmentActivity {
         tv_face_attr = findViewById(R.id.tv_face_attr);
 
         mMainHandler = new MainHandler(this);
-
         mCameraHandlerThread = new HandlerThread("camera-thread");
         mCameraHandlerThread.start();
         mCameraHandler = new Handler(mCameraHandlerThread.getLooper());
-
-        mImoHandlerThread = new HandlerThread("imo-thread");
-        mImoHandlerThread.start();
-        mImoHandler = new Handler(mImoHandlerThread.getLooper());
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
                 && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -144,34 +133,9 @@ public class MainActivity extends FragmentActivity {
     }
 
     private void init() {
-        ImoSDK.init("925E2350380866C8", null, new ImoSDK.OnInitListener() {
-            @Override
-            public void onInitSuccess() {
-                Log.d(TAG, "ImoSDK初始化成功！");
-            }
-
-            @Override
-            public void onInitError(int i) {
-                Log.d(TAG, "errorCode: " + i);
-                if(i == 0) {
-                    Log.e(TAG, "ImoSDK初始化失败！");
-                }
-            }
-        });
-
-        int errorCode;
-
-        mImoFaceTrackerDetector = new ImoFaceTrackerDetector();
-        errorCode = mImoFaceTrackerDetector.init();
-        if(errorCode != ImoErrorCode.IMO_API_RET_SUCCESS) {
-            Log.e(TAG, "imoFaceTrackerDetector.init失败！！！errorCode=" + errorCode);
-        }
-
-        mImoFaceAttribute = new ImoFaceAttribute();
-        errorCode = mImoFaceAttribute.init();
-        if(errorCode != ImoErrorCode.IMO_API_RET_SUCCESS) {
-            Log.e(TAG, "imoFaceAttribute.init失败！！！errorCode=" + errorCode);
-        }
+        mImoModel = new ImoModel(this);
+        mImoModel.init();
+        mImoModel.registerFaceTrackerDetectorListener(mIFaceTrackerDetectorListener);
     }
 
     /**
@@ -297,8 +261,8 @@ public class MainActivity extends FragmentActivity {
                             + ", PreviewSize="+ camera.getParameters().getPreviewSize().width + "*" + camera.getParameters().getPreviewSize().height
                             + ", PreviewFrameLength="+ data.length);
 
-                    if(data != null && mImoFaceTrackerDetector != null && mImoFaceAttribute != null) {
-                        updateFrame(data, CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
+                    if(mImoModel != null) {
+                        mImoModel.updateFrame(data, CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
                     }
                 }
             });
@@ -308,123 +272,32 @@ public class MainActivity extends FragmentActivity {
         }
     }
 
-    public void updateFrame(final byte[] data, final int width, final int height, final ImoImageFormat format, final List<ImoFaceInfo> imoFaceInfos) {
-        if(imoFaceInfos != null) {
-            final List<ImoFaceInfo> paramFaceInfos = new ArrayList<>();
-            for (ImoFaceInfo faceInfo : imoFaceInfos) {
-                paramFaceInfos.add(faceInfo.clone());
-            }
-
-            if(!mDetectionRunning) {
-                mImoHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        mDetectionRunning = true;
-
-                        float[][] pointss = PointUtils.getPointFromImoFaceInfo(paramFaceInfos);
-                        ImoAttributeInfo[] attributeInfos = mImoFaceAttribute.execBytes(data, width, height, format, pointss);
-                        if(attributeInfos != null && attributeInfos.length > 0) {
-                            for (int i = 0; i < attributeInfos.length; i++) {
-                                String attribute = "=>face size=" + attributeInfos.length + ", face id=" + i + ", age: " + attributeInfos[i].getAge() + ", gender: " + attributeInfos[i].getGender().getImoGender();
-                                Log.e(TAG, attribute);
-                                // mMainHandler.obtainMessage(MSG_UPDATE_UI, attribute).sendToTarget();
-								mIFaceTrackerDetectorListener.onFaceAttribute(attributeInfos[i].getAge(), attributeInfos[i].getGender().getImoGender());
-                            }
-                        } else {
-                            Log.e(TAG, "未检测到人脸");
-                        }
-
-                        mDetectionRunning = false;
-                    }
-                });
-            }
-        }
-    }
-
-    public void updateFrame(final byte[] data, final int width, final int height) {
-        ImoImageFormat format = ImoImageFormat.IMO_IMAGE_NV21;
-        ImoImageOrientation orientation = ImoImageOrientation.IMO_IMAGE_LEFT;
-        mImoFaceTrackerDetector.setModel(ImoFaceTrackerDetector.Model.IMO_FACE_TRACKER_DETECTOR_MODEL_VIDEO);
-        List<ImoFaceInfo> faceInfos = mImoFaceTrackerDetector.execBytes(data, width, height, format, orientation);
-
-        updateFrame(data, width, height, format, faceInfos);
-	}
-
-    /**
-     * 设置 摄像头的角度
-     *
-     * @param activity 上下文
-     * @param cameraId 摄像头ID（假如手机有N个摄像头，cameraId 的值 就是 0 ~ N-1）
-     * @param camera   摄像头对象
-     */
-    public static void setCameraDisplayOrientation(Activity activity,
-                                                   int cameraId, Camera camera) {
-
-        Camera.CameraInfo info = new Camera.CameraInfo();
-        //获取摄像头信息
-        Camera.getCameraInfo(cameraId, info);
-        int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-        //获取摄像头当前的角度
-        int degrees = 0;
-        switch (rotation) {
-            case Surface.ROTATION_0:
-                degrees = 0;
-                break;
-            case Surface.ROTATION_90:
-                degrees = 90;
-                break;
-            case Surface.ROTATION_180:
-                degrees = 180;
-                break;
-            case Surface.ROTATION_270:
-                degrees = 270;
-                break;
-        }
-
-        int result;
-        Log.d(TAG, "info.facing =   " + info.facing + ", cameraCount = " + Camera.getNumberOfCameras());
-        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-            //前置摄像头
-            result = (info.orientation + degrees) % 360;
-            result = (360 - result) % 360; // compensate the mirror
-        } else {
-            // back-facing  后置摄像头
-            result = (info.orientation - degrees + 360) % 360;
-        }
-        camera.setDisplayOrientation(result);
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-		ImoSDK.destroy();
-        if(mImoFaceTrackerDetector != null) {
-            mImoFaceTrackerDetector.destroy();
-        }
-        if(mImoFaceAttribute != null) {
-            mImoFaceAttribute.destroy();
-        }
-        if(mMainHandler != null) {
-            mMainHandler.removeCallbacksAndMessages(null);
-        }
-        if(mCameraHandlerThread != null) {
-            mCameraHandlerThread.quit();
-        }
-        if(mImoHandlerThread != null) {
-            mImoHandlerThread.quit();
-        }
-    }
-
-    private IFaceTrackerDetectorListener mIFaceTrackerDetectorListener = new IFaceTrackerDetectorListener() {
+    private ImoModel.IFaceTrackerDetectorListener mIFaceTrackerDetectorListener = new ImoModel.IFaceTrackerDetectorListener() {
         @Override
-        public void onFaceAttribute(int age, ImoGender gender) {
-            String attr = "age: " + age + ", gender: " + gender;
-            Log.e(TAG, attr);
+        public void onFaceAttr(ImoAttributeInfo[] attributeInfos) {
+            if(attributeInfos != null && attributeInfos.length > 0) {
+                for (int i = 0; i < attributeInfos.length; i++) {
+                    String attribute = "=>face size=" + attributeInfos.length + ", face id=" + i + ", age: " + attributeInfos[i].getAge() + ", gender: " + attributeInfos[i].getGender().getImoGender();
+                    Log.e(TAG, attribute);
+                }
+            } else {
+                Log.e(TAG, "未检测到人脸");
+            }
 //            mMainHandler.obtainMessage(MSG_UPDATE_UI, attr).sendToTarget();
         }
     };
 
-    public interface IFaceTrackerDetectorListener {
-        void onFaceAttribute(int age, ImoGender gender);
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+
+        if(mMainHandler != null) {
+            mMainHandler.removeCallbacksAndMessages(null);
+        }
+
+        if(mCameraHandlerThread != null) {
+            mCameraHandlerThread.quit();
+            mCameraHandlerThread = null;
+        }
     }
 }
