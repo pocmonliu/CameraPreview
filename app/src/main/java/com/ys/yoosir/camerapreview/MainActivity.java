@@ -1,11 +1,18 @@
 package com.ys.yoosir.camerapreview;
 
+import java.io.IOException;
+import java.lang.ref.WeakReference;
+import java.util.ArrayList;
+import java.util.List;
+
 import android.Manifest;
 import android.app.Activity;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.ImageFormat;
 import android.graphics.PixelFormat;
 import android.hardware.Camera;
+import android.hardware.Camera.Size;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -15,7 +22,9 @@ import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.support.v4.content.ContextCompat;
+import android.text.TextUtils;
 import android.util.Log;
+import android.view.Display;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -23,6 +32,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.TextView;
 
+import com.aimall.core.ImoErrorCode;
 import com.aimall.core.ImoSDK;
 import com.aimall.core.define.ImoImageFormat;
 import com.aimall.core.define.ImoImageOrientation;
@@ -33,35 +43,28 @@ import com.aimall.sdk.trackerdetector.ImoFaceTrackerDetector;
 import com.aimall.sdk.trackerdetector.bean.ImoFaceInfo;
 import com.aimall.sdk.trackerdetector.utils.PointUtils;
 
-import java.io.IOException;
-import java.lang.ref.WeakReference;
-import java.util.ArrayList;
-import java.util.List;
-
-public class MainActivity extends FragmentActivity/* extends AppCompatActivity */{
-    private static final String TAG = MainActivity.class.getSimpleName();
+public class MainActivity extends FragmentActivity {
+    private static final String TAG = "ImoModel";
 
     private static final int REQUEST_CAMERA_CODE = 0x100;
-
     private static final int MSG_UPDATE_UI = 1;           //更新界面
 
-    private static final int CAMERA_PICTURE_WIDTH = 1280;
-    private static final int CAMERA_PICTURE_HEIGHT = 720;
     private static final int CAMERA_PREVIEW_WIDTH = 1280;
     private static final int CAMERA_PREVIEW_HEIGHT = 720;
     private static final int CAMERA_DISPLAY_ORIENTATION = 90;
 
     private TextView tv_face_attr;
     private  SurfaceView surface_view;
-    private Camera camera;
+    private Camera mCamera;
     private boolean isPreview = false;
 
-    private MainHandler mMainHandler;
     private HandlerThread mCameraHandlerThread;
     private Handler mCameraHandler;
     private HandlerThread mImoHandlerThread;
     private Handler mImoHandler;
+    
 
+    private MainHandler mMainHandler;
     private ImoFaceTrackerDetector mImoFaceTrackerDetector;
     private ImoFaceAttribute mImoFaceAttribute;
     private boolean mDetectionRunning = false;
@@ -69,6 +72,7 @@ public class MainActivity extends FragmentActivity/* extends AppCompatActivity *
     public void updateFaceAttr(String text) {
         tv_face_attr.setText(text);
     }
+
 
     private static class MainHandler extends Handler {
 
@@ -118,7 +122,7 @@ public class MainActivity extends FragmentActivity/* extends AppCompatActivity *
         mImoHandler = new Handler(mImoHandlerThread.getLooper());
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
-                && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED){
+                && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERA_CODE);
         } else {
             init();
@@ -150,16 +154,24 @@ public class MainActivity extends FragmentActivity/* extends AppCompatActivity *
             public void onInitError(int i) {
                 Log.d(TAG, "errorCode: " + i);
                 if(i == 0) {
-                    Log.d(TAG, "ImoSDK初始化失败！");
+                    Log.e(TAG, "ImoSDK初始化失败！");
                 }
             }
         });
 
+        int errorCode;
+
         mImoFaceTrackerDetector = new ImoFaceTrackerDetector();
-        mImoFaceTrackerDetector.init();
+        errorCode = mImoFaceTrackerDetector.init();
+        if(errorCode != ImoErrorCode.IMO_API_RET_SUCCESS) {
+            Log.e(TAG, "imoFaceTrackerDetector.init失败！！！errorCode=" + errorCode);
+        }
 
         mImoFaceAttribute = new ImoFaceAttribute();
-        mImoFaceAttribute.init();
+        errorCode = mImoFaceAttribute.init();
+        if(errorCode != ImoErrorCode.IMO_API_RET_SUCCESS) {
+            Log.e(TAG, "imoFaceAttribute.init失败！！！errorCode=" + errorCode);
+        }
     }
 
     /**
@@ -200,14 +212,16 @@ public class MainActivity extends FragmentActivity/* extends AppCompatActivity *
          */
         @Override
         public void surfaceCreated(final SurfaceHolder surfaceHolder) {
-            if(camera == null) {
-                mCameraHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        openCamera(surfaceHolder);
-                    }
-                });
-            }
+            Log.e(TAG, "===>surfaceCreated()");
+			if(mCamera == null) {
+				 mCameraHandler.post(new Runnable() {
+                	@Override
+                	public void run() {
+                    	openCamera(surfaceHolder);
+                	}
+            	 });
+			}
+
         }
 
         /**
@@ -219,7 +233,7 @@ public class MainActivity extends FragmentActivity/* extends AppCompatActivity *
          */
         @Override
         public void surfaceChanged(SurfaceHolder surfaceHolder, int format, int width, int height) {
-
+            Log.e(TAG, "===>surfaceChanged(), width=" + width + ", height=" + height);
         }
 
         /**
@@ -228,10 +242,11 @@ public class MainActivity extends FragmentActivity/* extends AppCompatActivity *
          */
         @Override
         public void surfaceDestroyed(SurfaceHolder surfaceHolder) {
-            if(camera != null){
+            Log.e(TAG, "===>surfaceDestroyed()");
+            if(mCamera != null){
                 if(isPreview){//正在预览
-                    camera.stopPreview();
-                    camera.release();
+                    mCamera.stopPreview();
+                    mCamera.release();
                 }
             }
         }
@@ -240,109 +255,114 @@ public class MainActivity extends FragmentActivity/* extends AppCompatActivity *
     private void openCamera(SurfaceHolder surfaceHolder) {
         try {
             // Camera,open() 默认返回的后置摄像头信息
-            camera = Camera.open();//打开硬件摄像头，这里导包得时候一定要注意是android.hardware.Camera
+            mCamera = Camera.open();//打开硬件摄像头，这里导包得时候一定要注意是android.hardware.Camera
             //此处也可以设置摄像头参数
             Log.d(TAG, "Camera.open()");
 
 //            WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);//得到窗口管理器
 //            Display display  = wm.getDefaultDisplay();//得到当前屏幕
 //            Log.d(TAG, "display.getWidth() = " + display.getWidth() + ", display.getHeight() = " + display.getHeight());
-            Camera.Parameters parameters = camera.getParameters();//得到摄像头的参数
-//
+            Camera.Parameters parameters = mCamera.getParameters();//得到摄像头的参数
+
 //            List<Size> pictureSizes = parameters.getSupportedPictureSizes();
 //            int length = pictureSizes.size();
 //            Log.e(TAG, "SupportedPictureSizes, length=" + length);
 //            for (int i = 0; i < length; i++) {
 //                Log.e(TAG,"SupportedPictureSizes : " + pictureSizes.get(i).width + "x" + pictureSizes.get(i).height);
 //            }
-//
 //            List<Size> previewSizes = parameters.getSupportedPreviewSizes();
 //            length = previewSizes.size();
 //            Log.e(TAG, "\nSupportedPictureSizes, length=" + length);
-//            for (int j = 0; j < length; j++) {
+//            for (int i = 0; i < length; i++) {
 //                Log.e(TAG,"SupportedPreviewSizes : " + previewSizes.get(i).width + "x" + previewSizes.get(i).height);
 //            }
 
             parameters.setPictureFormat(ImageFormat.JPEG);//设置照片的格式PixelFormat.RGB_888
             parameters.setJpegQuality(60);//设置照片的质量
-            //设置照片的大小，默认是和屏幕一样大
-//            parameters.setPictureSize(display.getHeight(), display.getWidth());
-            parameters.setPictureSize(CAMERA_PICTURE_WIDTH, CAMERA_PICTURE_HEIGHT);
             parameters.setPreviewSize(CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
-            camera.setParameters(parameters);
+            mCamera.setParameters(parameters);
 
             //设置角度，此处 CameraId 我默认 为 0 （后置）
             //CameraId 也可以 通过 参考 Camera.open() 源码 方法获取
-            //setCameraDisplayOrientation(MainActivity.this,0,camera);
-            camera.setDisplayOrientation(CAMERA_DISPLAY_ORIENTATION);
-            camera.setPreviewDisplay(surfaceHolder);//通过SurfaceView显示取景画面
-            camera.startPreview();//开始预览
-            camera.setPreviewCallback(new Camera.PreviewCallback() {
+            //setCameraDisplayOrientation(this, 0, mCamera);
+
+            mCamera.setDisplayOrientation(CAMERA_DISPLAY_ORIENTATION);
+            mCamera.setPreviewDisplay(surfaceHolder);//通过SurfaceView显示取景画面
+            mCamera.startPreview();//开始预览
+            mCamera.setPreviewCallback(new Camera.PreviewCallback() {
                 @Override
                 public void onPreviewFrame(byte[] data, Camera camera) {
-//                    Log.v(TAG, "=>current thread name=" + Thread.currentThread().getName()
-//                            + ", PreviewFormat=" + camera.getParameters().getPreviewFormat()
-//                            + ", PreviewSize="+ camera.getParameters().getPreviewSize().width + "*" + camera.getParameters().getPreviewSize().height
-//                            + ", PreviewFrameLength="+ data.length);
+                    Log.v(TAG, "=>current thread name=" + Thread.currentThread().getName()
+                            + ", PreviewFormat=" + camera.getParameters().getPreviewFormat()
+                            + ", PreviewSize="+ camera.getParameters().getPreviewSize().width + "*" + camera.getParameters().getPreviewSize().height
+                            + ", PreviewFrameLength="+ data.length);
 
-                    if(mImoFaceTrackerDetector != null && mImoFaceAttribute != null) {
-                        updateFrame(data, CAMERA_PICTURE_WIDTH, CAMERA_PICTURE_HEIGHT);
+                    if(data != null && mImoFaceTrackerDetector != null && mImoFaceAttribute != null) {
+                        updateFrame(data, CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
                     }
                 }
             });
-            isPreview = true;   //设置是否预览参数为真
+            isPreview = true;//设置是否预览参数为真
         } catch (IOException e) {
             Log.e(TAG, Log.getStackTraceString(e));
         }
     }
 
-    private void updateFrame(final byte[] data, final int width, final int height) {
-        mImoFaceTrackerDetector.setModel(ImoFaceTrackerDetector.Model.IMO_FACE_TRACKER_DETECTOR_MODEL_VIDEO);
-        List<ImoFaceInfo> faceInfos = mImoFaceTrackerDetector.execBytes(data, width, height, ImoImageFormat.IMO_IMAGE_NV21, ImoImageOrientation.IMO_IMAGE_LEFT);
-
-        if(faceInfos != null) {
+    public void updateFrame(final byte[] data, final int width, final int height, final ImoImageFormat format, final List<ImoFaceInfo> imoFaceInfos) {
+        if(imoFaceInfos != null) {
             final List<ImoFaceInfo> paramFaceInfos = new ArrayList<>();
-            for (ImoFaceInfo faceInfo : faceInfos) {
+            for (ImoFaceInfo faceInfo : imoFaceInfos) {
                 paramFaceInfos.add(faceInfo.clone());
             }
 
-            mImoHandler.post(new Runnable() {
-                @Override
-                public void run() {
-                    if(!mDetectionRunning) {
+            if(!mDetectionRunning) {
+                mImoHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
                         mDetectionRunning = true;
-                        float[][] pointss = PointUtils.getPointFromImoFaceInfo(paramFaceInfos);
-                        ImoAttributeInfo[] attributeInfos = mImoFaceAttribute.execBytes(data, width, height, ImoImageFormat.IMO_IMAGE_NV21, pointss);
 
-                        if(attributeInfos != null) {
-                            if(attributeInfos.length > 0) {
-                                for (ImoAttributeInfo info: attributeInfos) {
-                                    mIFaceTrackerDetectorListener.onFaceAttribute(info.getAge(), info.getGender().getImoGender());
-                                }
-                            } else {
-                                Log.e(TAG, "未检测到人脸");
+                        float[][] pointss = PointUtils.getPointFromImoFaceInfo(paramFaceInfos);
+                        ImoAttributeInfo[] attributeInfos = mImoFaceAttribute.execBytes(data, width, height, format, pointss);
+                        if(attributeInfos != null && attributeInfos.length > 0) {
+                            for (int i = 0; i < attributeInfos.length; i++) {
+                                String attribute = "=>face size=" + attributeInfos.length + ", face id=" + i + ", age: " + attributeInfos[i].getAge() + ", gender: " + attributeInfos[i].getGender().getImoGender();
+                                Log.e(TAG, attribute);
+                                // mMainHandler.obtainMessage(MSG_UPDATE_UI, attribute).sendToTarget();
+								mIFaceTrackerDetectorListener.onFaceAttribute(attributeInfos[i].getAge(), attributeInfos[i].getGender().getImoGender());
                             }
+                        } else {
+                            Log.e(TAG, "未检测到人脸");
                         }
+
                         mDetectionRunning = false;
                     }
-                }
-            });
+                });
+            }
         }
     }
 
+    public void updateFrame(final byte[] data, final int width, final int height) {
+        ImoImageFormat format = ImoImageFormat.IMO_IMAGE_NV21;
+        ImoImageOrientation orientation = ImoImageOrientation.IMO_IMAGE_LEFT;
+        mImoFaceTrackerDetector.setModel(ImoFaceTrackerDetector.Model.IMO_FACE_TRACKER_DETECTOR_MODEL_VIDEO);
+        List<ImoFaceInfo> faceInfos = mImoFaceTrackerDetector.execBytes(data, width, height, format, orientation);
+
+        updateFrame(data, width, height, format, faceInfos);
+	}
+
     /**
-     * 设置摄像头的角度
+     * 设置 摄像头的角度
      *
      * @param activity 上下文
      * @param cameraId 摄像头ID（假如手机有N个摄像头，cameraId 的值 就是 0 ~ N-1）
      * @param camera   摄像头对象
      */
     public static void setCameraDisplayOrientation(Activity activity,
-                                                   int cameraId, android.hardware.Camera camera) {
+                                                   int cameraId, Camera camera) {
 
-        Camera.CameraInfo info = new android.hardware.Camera.CameraInfo();
+        Camera.CameraInfo info = new Camera.CameraInfo();
         //获取摄像头信息
-        android.hardware.Camera.getCameraInfo(cameraId, info);
+        Camera.getCameraInfo(cameraId, info);
         int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
         //获取摄像头当前的角度
         int degrees = 0;
@@ -378,7 +398,7 @@ public class MainActivity extends FragmentActivity/* extends AppCompatActivity *
     protected void onDestroy() {
         super.onDestroy();
 		ImoSDK.destroy();
-		if(mImoFaceTrackerDetector != null) {
+        if(mImoFaceTrackerDetector != null) {
             mImoFaceTrackerDetector.destroy();
         }
         if(mImoFaceAttribute != null) {
