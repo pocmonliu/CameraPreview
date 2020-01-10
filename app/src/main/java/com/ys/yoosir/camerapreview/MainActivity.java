@@ -1,47 +1,26 @@
 package com.ys.yoosir.camerapreview;
 
-import java.io.IOException;
-import java.lang.ref.WeakReference;
-import java.util.ArrayList;
-import java.util.List;
-
 import android.Manifest;
-import android.app.Activity;
-import android.content.Context;
 import android.content.pm.PackageManager;
-import android.graphics.ImageFormat;
 import android.graphics.PixelFormat;
-import android.hardware.Camera;
-import android.hardware.Camera.Size;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.HandlerThread;
 import android.os.Message;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.FragmentActivity;
 import android.support.v4.content.ContextCompat;
-import android.text.TextUtils;
 import android.util.Log;
-import android.view.Display;
-import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.TextView;
 
-import com.aimall.core.ImoErrorCode;
-import com.aimall.core.ImoSDK;
-import com.aimall.core.define.ImoImageFormat;
-import com.aimall.core.define.ImoImageOrientation;
-import com.aimall.sdk.faceattribute.ImoFaceAttribute;
 import com.aimall.sdk.faceattribute.bean.ImoAttributeInfo;
-import com.aimall.sdk.facegender.bean.ImoGender;
-import com.aimall.sdk.trackerdetector.ImoFaceTrackerDetector;
-import com.aimall.sdk.trackerdetector.bean.ImoFaceInfo;
-import com.aimall.sdk.trackerdetector.utils.PointUtils;
+
+import java.lang.ref.WeakReference;
 
 public class MainActivity extends FragmentActivity {
     private static final String TAG = "ImoModel";
@@ -49,19 +28,10 @@ public class MainActivity extends FragmentActivity {
     private static final int REQUEST_CAMERA_CODE = 0x100;
     private static final int MSG_UPDATE_UI = 1;           //更新界面
 
-    private static final int CAMERA_PREVIEW_WIDTH = 1280;
-    private static final int CAMERA_PREVIEW_HEIGHT = 720;
-    private static final int CAMERA_DISPLAY_ORIENTATION = 90;
-    private Camera mCamera;
-    private HandlerThread mCameraHandlerThread;
-    private Handler mCameraHandler;
-
     private TextView tv_face_attr;
     private SurfaceView surface_view;
-    private SurfaceHolder mSurfaceHolder;
 
     private MainHandler mMainHandler;
-
     private ImoModel mImoModel;
 
     public void updateFaceAttr(String text) {
@@ -149,10 +119,6 @@ public class MainActivity extends FragmentActivity {
     private void init() {
         mMainHandler = new MainHandler(this);
 
-        mCameraHandlerThread = new HandlerThread("camera-thread");
-        mCameraHandlerThread.start();
-        mCameraHandler = new Handler(mCameraHandlerThread.getLooper());
-
         mImoModel = new ImoModel(this);
         mImoModel.init();
         mImoModel.registerFaceTrackerDetectorListener(mIFaceTrackerDetectorListener);
@@ -163,11 +129,11 @@ public class MainActivity extends FragmentActivity {
      */
     private void openSurfaceView() {
         // 获得 SurfaceHolder 对象
-        mSurfaceHolder = surface_view.getHolder();
+        SurfaceHolder surfaceHolder = surface_view.getHolder();
         Log.d(TAG, "surface_view: width=" + surface_view.getWidth() + ", height=" + surface_view.getHeight());
         // 设置 Surface 格式
         // 参数： PixelFormat中定义的 int 值 ,详细参见 PixelFormat.java
-        mSurfaceHolder.setFormat(PixelFormat.TRANSPARENT);
+        surfaceHolder.setFormat(PixelFormat.TRANSPARENT);
 
         // 如果需要，保持屏幕常亮
         // mSurfaceHolder.setKeepScreenOn(true);
@@ -185,7 +151,7 @@ public class MainActivity extends FragmentActivity {
         //mSurfaceHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
 
         // 添加 Surface 的 callback 接口
-        mSurfaceHolder.addCallback(mSurfaceCallback);
+        surfaceHolder.addCallback(mSurfaceCallback);
     }
 
     private SurfaceHolder.Callback mSurfaceCallback = new SurfaceHolder.Callback() {
@@ -197,15 +163,9 @@ public class MainActivity extends FragmentActivity {
         @Override
         public void surfaceCreated(final SurfaceHolder surfaceHolder) {
             Log.e(TAG, "===>surfaceCreated()");
-
-			if(mCamera == null) {
-				 mCameraHandler.post(new Runnable() {
-                	@Override
-                	public void run() {
-                    	openCamera(surfaceHolder);
-                	}
-            	 });
-			}
+            if(mImoModel != null) {
+                mImoModel.openCamera(surfaceHolder);
+            }
         }
 
         /**
@@ -227,72 +187,11 @@ public class MainActivity extends FragmentActivity {
         @Override
         public void surfaceDestroyed(SurfaceHolder surfaceHolder) {
             Log.e(TAG, "===>surfaceDestroyed()");
-            if(mCamera != null){
-                mCamera.setPreviewCallback(null);
-                mCamera.stopPreview();
-                mCamera.release();
-                mCamera = null;
+            if(mImoModel != null) {
+                mImoModel.closeCamera();
             }
         }
     };
-
-    private void openCamera(SurfaceHolder surfaceHolder) {
-        try {
-            // Camera,open() 默认返回的后置摄像头信息
-            mCamera = Camera.open();//打开硬件摄像头，这里导包得时候一定要注意是android.hardware.Camera
-            //此处也可以设置摄像头参数
-            Log.d(TAG, "Camera.open()");
-
-//            WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);//得到窗口管理器
-//            Display display  = wm.getDefaultDisplay();//得到当前屏幕
-//            Log.d(TAG, "display.getWidth() = " + display.getWidth() + ", display.getHeight() = " + display.getHeight());
-            Camera.Parameters parameters = mCamera.getParameters();//得到摄像头的参数
-
-//            List<Size> pictureSizes = parameters.getSupportedPictureSizes();
-//            int length = pictureSizes.size();
-//            Log.e(TAG, "SupportedPictureSizes, length=" + length);
-//            for (int i = 0; i < length; i++) {
-//                Log.e(TAG,"SupportedPictureSizes : " + pictureSizes.get(i).width + "x" + pictureSizes.get(i).height);
-//            }
-//            List<Size> previewSizes = parameters.getSupportedPreviewSizes();
-//            length = previewSizes.size();
-//            Log.e(TAG, "\nSupportedPictureSizes, length=" + length);
-//            for (int i = 0; i < length; i++) {
-//                Log.e(TAG,"SupportedPreviewSizes : " + previewSizes.get(i).width + "x" + previewSizes.get(i).height);
-//            }
-
-            parameters.setPictureFormat(ImageFormat.JPEG);//设置照片的格式PixelFormat.RGB_888
-            parameters.setJpegQuality(100);//设置照片的质量
-            parameters.setPreviewSize(CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
-            mCamera.setParameters(parameters);
-
-            //设置角度，此处 CameraId 我默认 为 0 （后置）
-            //CameraId 也可以 通过 参考 Camera.open() 源码 方法获取
-            //setCameraDisplayOrientation(this, 0, mCamera);
-
-            mCamera.setDisplayOrientation(CAMERA_DISPLAY_ORIENTATION);
-            mCamera.setPreviewDisplay(surfaceHolder);//通过SurfaceView显示取景画面
-            mCamera.startPreview();//开始预览
-            mCamera.setPreviewCallback(new Camera.PreviewCallback() {
-                @Override
-                public void onPreviewFrame(byte[] data, Camera camera) {
-                    if(mCamera != null && data != null) {
-                        Camera.Parameters parameters = camera.getParameters();
-                        Log.v(TAG, "=>current thread name=" + Thread.currentThread().getName()
-                                + ", PreviewFormat=" + parameters.getPreviewFormat()
-                                + ", PreviewSize="+ parameters.getPreviewSize().width + "*" + parameters.getPreviewSize().height
-                                + ", PreviewFrameLength="+ data.length);
-
-                        if(mImoModel != null) {
-                            mImoModel.updateFrame(data, CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
-                        }
-                    }
-                }
-            });
-        } catch (IOException e) {
-            Log.e(TAG, Log.getStackTraceString(e));
-        }
-    }
 
     private ImoModel.IFaceTrackerDetectorListener mIFaceTrackerDetectorListener = new ImoModel.IFaceTrackerDetectorListener() {
         @Override
@@ -315,11 +214,6 @@ public class MainActivity extends FragmentActivity {
 
         if(mMainHandler != null) {
             mMainHandler.removeCallbacksAndMessages(null);
-        }
-
-        if(mCameraHandlerThread != null) {
-            mCameraHandlerThread.quit();
-            mCameraHandlerThread = null;
         }
 
         if(mImoModel != null) {
