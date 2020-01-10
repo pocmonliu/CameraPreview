@@ -53,12 +53,12 @@ public class MainActivity extends FragmentActivity {
     private static final int CAMERA_PREVIEW_HEIGHT = 720;
     private static final int CAMERA_DISPLAY_ORIENTATION = 90;
     private Camera mCamera;
-    private boolean isPreview = false;
     private HandlerThread mCameraHandlerThread;
     private Handler mCameraHandler;
 
     private TextView tv_face_attr;
-    private  SurfaceView surface_view;
+    private SurfaceView surface_view;
+    private SurfaceHolder mSurfaceHolder;
 
     private MainHandler mMainHandler;
 
@@ -94,6 +94,8 @@ public class MainActivity extends FragmentActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        Log.e(TAG, "===>onCreate()");
+
         // 无title
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         // 全屏
@@ -105,19 +107,29 @@ public class MainActivity extends FragmentActivity {
         surface_view = findViewById(R.id.surface_view);
         tv_face_attr = findViewById(R.id.tv_face_attr);
 
-        mMainHandler = new MainHandler(this);
-        mCameraHandlerThread = new HandlerThread("camera-thread");
-        mCameraHandlerThread.start();
-        mCameraHandler = new Handler(mCameraHandlerThread.getLooper());
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
                 && ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, REQUEST_CAMERA_CODE);
+            Log.e(TAG, "===>111111");
+            return;
         } else {
+            Log.e(TAG, "===>444444");
             init();
         }
-
+        Log.e(TAG, "===>555555");
         openSurfaceView();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        Log.e(TAG, "===>onResume()");
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        Log.e(TAG, "===>onPause()");
     }
 
     @Override
@@ -125,14 +137,22 @@ public class MainActivity extends FragmentActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == REQUEST_CAMERA_CODE) {
             if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                init();
+                Log.e(TAG, "===>222222");
+                recreate();
             } else {
+                Log.e(TAG, "===>333333");
                 finish();
             }
         }
     }
 
     private void init() {
+        mMainHandler = new MainHandler(this);
+
+        mCameraHandlerThread = new HandlerThread("camera-thread");
+        mCameraHandlerThread.start();
+        mCameraHandler = new Handler(mCameraHandlerThread.getLooper());
+
         mImoModel = new ImoModel(this);
         mImoModel.init();
         mImoModel.registerFaceTrackerDetectorListener(mIFaceTrackerDetectorListener);
@@ -143,7 +163,7 @@ public class MainActivity extends FragmentActivity {
      */
     private void openSurfaceView() {
         // 获得 SurfaceHolder 对象
-        SurfaceHolder mSurfaceHolder = surface_view.getHolder();
+        mSurfaceHolder = surface_view.getHolder();
         Log.d(TAG, "surface_view: width=" + surface_view.getWidth() + ", height=" + surface_view.getHeight());
         // 设置 Surface 格式
         // 参数： PixelFormat中定义的 int 值 ,详细参见 PixelFormat.java
@@ -177,6 +197,7 @@ public class MainActivity extends FragmentActivity {
         @Override
         public void surfaceCreated(final SurfaceHolder surfaceHolder) {
             Log.e(TAG, "===>surfaceCreated()");
+
 			if(mCamera == null) {
 				 mCameraHandler.post(new Runnable() {
                 	@Override
@@ -185,7 +206,6 @@ public class MainActivity extends FragmentActivity {
                 	}
             	 });
 			}
-
         }
 
         /**
@@ -208,10 +228,10 @@ public class MainActivity extends FragmentActivity {
         public void surfaceDestroyed(SurfaceHolder surfaceHolder) {
             Log.e(TAG, "===>surfaceDestroyed()");
             if(mCamera != null){
-                if(isPreview){//正在预览
-                    mCamera.stopPreview();
-                    mCamera.release();
-                }
+                mCamera.setPreviewCallback(null);
+                mCamera.stopPreview();
+                mCamera.release();
+                mCamera = null;
             }
         }
     };
@@ -242,7 +262,7 @@ public class MainActivity extends FragmentActivity {
 //            }
 
             parameters.setPictureFormat(ImageFormat.JPEG);//设置照片的格式PixelFormat.RGB_888
-            parameters.setJpegQuality(60);//设置照片的质量
+            parameters.setJpegQuality(100);//设置照片的质量
             parameters.setPreviewSize(CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
             mCamera.setParameters(parameters);
 
@@ -256,17 +276,19 @@ public class MainActivity extends FragmentActivity {
             mCamera.setPreviewCallback(new Camera.PreviewCallback() {
                 @Override
                 public void onPreviewFrame(byte[] data, Camera camera) {
-                    Log.v(TAG, "=>current thread name=" + Thread.currentThread().getName()
-                            + ", PreviewFormat=" + camera.getParameters().getPreviewFormat()
-                            + ", PreviewSize="+ camera.getParameters().getPreviewSize().width + "*" + camera.getParameters().getPreviewSize().height
-                            + ", PreviewFrameLength="+ data.length);
+                    if(mCamera != null && data != null) {
+                        Camera.Parameters parameters = camera.getParameters();
+                        Log.v(TAG, "=>current thread name=" + Thread.currentThread().getName()
+                                + ", PreviewFormat=" + parameters.getPreviewFormat()
+                                + ", PreviewSize="+ parameters.getPreviewSize().width + "*" + parameters.getPreviewSize().height
+                                + ", PreviewFrameLength="+ data.length);
 
-                    if(mImoModel != null) {
-                        mImoModel.updateFrame(data, CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
+                        if(mImoModel != null) {
+                            mImoModel.updateFrame(data, CAMERA_PREVIEW_WIDTH, CAMERA_PREVIEW_HEIGHT);
+                        }
                     }
                 }
             });
-            isPreview = true;//设置是否预览参数为真
         } catch (IOException e) {
             Log.e(TAG, Log.getStackTraceString(e));
         }
@@ -298,6 +320,11 @@ public class MainActivity extends FragmentActivity {
         if(mCameraHandlerThread != null) {
             mCameraHandlerThread.quit();
             mCameraHandlerThread = null;
+        }
+
+        if(mImoModel != null) {
+            mImoModel.destroy();
+            mImoModel = null;
         }
     }
 }

@@ -106,7 +106,7 @@ public class ImoModel {
 	}
 
 	public void updateFrame(final byte[] data, final int width, final int height) {
-		if(data != null && mImoFaceTrackerDetector != null && mImoFaceAttribute != null) {
+		if(mImoFaceTrackerDetector != null && mImoFaceAttribute != null) {
 			ImoImageFormat format = ImoImageFormat.IMO_IMAGE_NV21;
 			ImoImageOrientation orientation = ImoImageOrientation.IMO_IMAGE_LEFT;
 			mImoFaceTrackerDetector.setModel(ImoFaceTrackerDetector.Model.IMO_FACE_TRACKER_DETECTOR_MODEL_VIDEO);
