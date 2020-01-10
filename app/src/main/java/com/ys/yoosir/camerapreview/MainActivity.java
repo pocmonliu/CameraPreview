@@ -23,7 +23,7 @@ import com.aimall.sdk.faceattribute.bean.ImoAttributeInfo;
 import java.lang.ref.WeakReference;
 
 public class MainActivity extends FragmentActivity {
-    private static final String TAG = "ImoModel";
+    private static final String TAG = MainActivity.class.getSimpleName();
 
     private static final int REQUEST_CAMERA_CODE = 0x100;
     private static final int MSG_UPDATE_UI = 1;           //更新界面
@@ -196,15 +196,28 @@ public class MainActivity extends FragmentActivity {
     private ImoModel.IFaceTrackerDetectorListener mIFaceTrackerDetectorListener = new ImoModel.IFaceTrackerDetectorListener() {
         @Override
         public void onFaceAttr(ImoAttributeInfo[] attributeInfos) {
+            String attr = "";
             if(attributeInfos != null && attributeInfos.length > 0) {
                 for (int i = 0; i < attributeInfos.length; i++) {
-                    String attribute = "=>face size=" + attributeInfos.length + ", face id=" + i + ", age: " + attributeInfos[i].getAge() + ", gender: " + attributeInfos[i].getGender().getImoGender();
-                    Log.e(TAG, attribute);
+                    int age = attributeInfos[i].getAge();
+                    int gender = attributeInfos[i].getGender().getImoGender().ordinal();
+                    String sex = "未知";
+                    switch (gender) {
+                        case 1:
+                            sex = "女";
+                            break;
+                        case 2:
+                            sex = "男";
+                            break;
+                    }
+                    attr += "=>face size=" + attributeInfos.length + ", face id=" + i + ", age: " + age + ", gender: " + sex + "\n";
                 }
             } else {
-                Log.e(TAG, "未检测到人脸");
+                attr = "未检测到人脸";
+                mMainHandler.obtainMessage(MSG_UPDATE_UI, "").sendToTarget();
             }
-//            mMainHandler.obtainMessage(MSG_UPDATE_UI, attr).sendToTarget();
+            Log.e(TAG, attr);
+            mMainHandler.obtainMessage(MSG_UPDATE_UI, attr).sendToTarget();
         }
     };
 
